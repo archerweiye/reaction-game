@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>⚡ 反应力大挑战</title>
+    <style>
+        * { margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body { 
+            font-family: sans-serif; 
+            overflow: hidden;
+            background: #1a1a2e;
+            color: #fff;
+            touch-action: manipulation;
+        }
+        #game {
+            width: 100vw; 
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+        }
+        .waiting { background: #e74c3c !important; transition: background 0.3s; }
+        .go { background: #27ae60 !important; transition: background 0.1s; }
+        .result { background: #8e44ad !important; }
+        .too-early { background: #c0392b !important; }
+        
+        h1 { font-size: 2rem; margin-bottom: 10px; }
+        p { font-size: 1.2rem; margin: 10px 0; }
+        .time { font-size: 5rem; font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+        
+        .rank-box {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 15px;
+            margin: 10px 0;
+            width: 100%;
+            max-width: 280px;
+            max-height: 35vh;
+            overflow-y: auto;
+            text-align: left;
+        }
+        .rank-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .rank-item:last-child { border-bottom: none; }
+        .rank-item.first { color: #ffd700; }
+        .rank-item.second { color: #c0c0c0; }
+        .rank-item.third { color: #cd7f32; }
+        
+        button {
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            border-radius: 12px;
+            border: none;
+            background: #fff;
+            color: #333;
+            cursor: pointer;
+            margin: 8px;
+            font-weight: bold;
+            min-width: 160px;
+            -webkit-tap-highlight-color: rgba(255,255,255,0.3);
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        button:active { transform: scale(0.95); }
+        button.secondary { 
+            background: transparent; 
+            color: #fff; 
+            border: 2px solid rgba(255,255,255,0.6); 
+        }
+        button.small { 
+            padding: 8px 16px; 
+            font-size: 0.9rem; 
+            min-width: auto;
+        }
+        
+        .name-display { font-size: 0.9rem; opacity: 0.8; margin-bottom: 15px; }
+        .stats { font-size: 0.85rem; opacity: 0.7; margin-top: 10px; }
+        .best-badge { 
+            background: linear-gradient(135deg, #ffd700, #ffaa00); 
+            color: #333; 
+            padding: 3px 10px; 
+            border-radius: 20px; 
+            font-size: 0.8rem;
+            margin-left: 8px;
+        }
+        .rating { 
+            font-size: 1.5rem; 
+            margin: 10px 0; 
+            animation: bounce 0.5s;
+        }
+        @keyframes bounce {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .shake { animation: shake 0.3s; }
+        
+        .popup-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+        .popup {
+            background: #fff;
+            color: #333;
+            padding: 25px;
+            border-radius: 16px;
+            max-width: 90%;
+            width: 320px;
+            text-align: left;
+        }
+        .popup h3 { margin-bottom: 15px; text-align: center; }
+        .popup input, .popup textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 16px;
+            box-sizing: border-box;
+            margin-bottom: 15px;
+        }
+        .popup-buttons { text-align: right; }
+        .popup-buttons button {
+            padding: 10px 20px;
+            font-size: 1rem;
+            min-width: auto;
+            margin: 0 4px;
+        }
+    </style>
+</head>
+<body>
+    <div id="game">
+        <h1>⚡ 反应力大挑战</h1>
+        <p>变绿就点!</p>
+        <div class="name-display" id="nameDisplay"></div>
+        
+        <button id="btnStart" ontouchstart="btnStartClick(event)">开始游戏</button>
+        <br>
+        <button id="btnRank" class="secondary" ontouchstart="btnRankClick(event)">🏆 排行榜</button>
+        <button id="btnIdea" class="secondary" ontouchstart="btnIdeaClick(event)">💡 提建议</button>
+        
+        <div class="stats" id="statsDisplay"></div>
+        <div id="extraArea"></div>
+    </div>
+
+    <script>
+        // ===== 音效系统 =====
+        var audioCtx = null;
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+        
+        function playBeep(freq, duration, type) {
+            if (!audioCtx) return;
+            var osc = audioCtx.createOscillator();
+            var gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.frequency.value = freq;
+            osc.type = type || 'sine';
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + duration);
+        }
+        
+        function playSound(type) {
+            initAudio();
+            switch(type) {
+                case 'wait': playBeep(300, 0.2, 'sine'); break;
+                case 'go': playBeep(600, 0.15, 'sine'); playBeep(800, 0.15, 'sine'); break;
+                case 'success': playBeep(523, 0.1, 'sine'); playBeep(659, 0.1, 'sine'); playBeep(784, 0.2, 'sine'); break;
+                case 'early': playBeep(200, 0.3, 'sawtooth'); break;
+                case 'newbest': playBeep(523, 0.1, 'sine'); playBeep(659, 0.1, 'sine'); playBeep(784, 0.1, 'sine'); playBeep(1047, 0.3, 'sine'); break;
+            }
+        }
+        
+        // ===== 游戏状态 =====
+        var extraArea = document.getElementById('extraArea');
+        var nameDisplay = document.getElementById('nameDisplay');
+        var statsDisplay = document.getElementById('statsDisplay');
+        var state = 'idle';
+        var startTime = 0;
+        var timer = null;
+        var playerName = localStorage.getItem('playerName') || '';
+        
+        // 本地统计
+        var stats = JSON.parse(localStorage.getItem('gameStats') || '{"games":0,"totalTime":0,"best":null}');
+        
+        // JSONBin.io 配置
+        var JSONBIN = {
+            binId: '6991c7ba43b1c97be980ddd9',
+            accessKey: '$2a$10$RpREaAXDoHiivNJeYo7RxeM5/xZI3RAZJ6VhwfIT40F6ESAr0twuy',
+            getApi: function() { return 'https://api.jsonbin.io/v3/b/' + this.binId + '/latest'; },
+            updateApi: function() { return 'https://api.jsonbin.io/v3/b/' + this.binId; }
+        };
+        var API = JSONBIN.getApi(); // 兼容旧代码
+        
+        // ===== 初始化 =====
+        updateNameDisplay();
+        updateStatsDisplay();
+        
+        function updateNameDisplay() {
+            if (playerName) {
+                var bestBadge = stats.best ? '<span class="best-badge">🏅 ' + stats.best + 'ms</span>' : '';
+                nameDisplay.innerHTML = '当前: ' + playerName + bestBadge + ' <button class="small secondary" ontouchstart="changeNameClick(event)">改名</button>';
+            } else {
+                nameDisplay.innerHTML = '';
+            }
+        }
+        
+        function updateStatsDisplay() {
+            if (stats.games > 0) {
+                var avg = Math.round(stats.totalTime / stats.games);
+                statsDisplay.innerHTML = '局数: ' + stats.games + ' | 平均: ' + avg + 'ms' + (stats.best ? ' | 最佳: ' + stats.best + 'ms' : '');
+            } else {
+                statsDisplay.innerHTML = '';
+            }
+        }
+        
+        function saveStats() {
+            localStorage.setItem('gameStats', JSON.stringify(stats));
+            updateStatsDisplay();
+            updateNameDisplay();
+        }
+        
+        // ===== 评价系统 =====
+        function getRating(ms) {
+            if (ms < 200) return { text: '⚡ 神速!', class: 'rating' };
+            if (ms < 250) return { text: '🔥 超快!', class: 'rating' };
+            if (ms < 300) return { text: '👍 很快!', class: 'rating' };
+            if (ms < 400) return { text: '😊 正常', class: 'rating' };
+            if (ms < 500) return { text: '🐢 有点慢', class: 'rating' };
+            return { text: '💤 太慢了', class: 'rating' };
+        }
+        
+        // ===== 按钮处理 =====
+        function btnStartClick(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            startGame();
+        }
+        
+        function btnRankClick(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            showRank();
+        }
+        
+        function btnIdeaClick(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            showIdeas();
+        }
+        
+        function changeNameClick(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            showNamePopup();
+        }
+        
+        document.getElementById('btnStart').onclick = btnStartClick;
+        document.getElementById('btnRank').onclick = btnRankClick;
+        document.getElementById('btnIdea').onclick = btnIdeaClick;
+        
+        // ===== 弹窗系统 =====
+        function showPopup(html) {
+            extraArea.innerHTML = '<div class="popup-overlay" ontouchstart="closePopup(event)">' + html + '</div>';
+        }
+        
+        function closePopup(e) {
+            if (e.target.classList.contains('popup-overlay')) {
+                extraArea.innerHTML = '';
+            }
+        }
+        
+        function showNamePopup() {
+            var html = '<div class="popup">' +
+                '<h3>修改名字</h3>' +
+                '<input id="playerNameInput" value="' + playerName + '" placeholder="输入新名字" />' +
+                '<div class="popup-buttons">' +
+                '<button class="secondary" onclick="extraArea.innerHTML=\'\'">取消</button>' +
+                '<button onclick="confirmNameChange()">确定</button>' +
+                '</div></div>';
+            showPopup(html);
+        }
+        
+        function confirmNameChange() {
+            var input = document.getElementById('playerNameInput');
+            if (input && input.value.trim()) {
+                playerName = input.value.trim();
+                localStorage.setItem('playerName', playerName);
+                updateNameDisplay();
+            }
+            extraArea.innerHTML = '';
+        }
+        
+        function showIdeas() {
+            var html = '<div class="popup">' +
+                '<h3>💡 改进建议</h3>' +
+                '<textarea id="ideaText" placeholder="写下你的建议..."></textarea>' +
+                '<div class="popup-buttons">' +
+                '<button class="secondary" onclick="extraArea.innerHTML=\'\'">取消</button>' +
+                '<button onclick="submitIdea()">提交</button>' +
+                '</div></div>';
+            showPopup(html);
+        }
+        
+        // JSONBin 数据操作
+        var jsonbinCache = { rank: [], ideas: [] };
+        
+        function loadJsonBinData() {
+            return fetch(JSONBIN.getApi(), {
+                headers: {
+                    'X-Bin-Meta': 'false',
+                    'X-Access-Key': JSONBIN.accessKey
+                }
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data && data.record) {
+                    jsonbinCache = data.record;
+                }
+                return jsonbinCache;
+            })
+            .catch(function() {
+                return jsonbinCache;
+            });
+        }
+        
+        function saveJsonBinData(data) {
+            return fetch(JSONBIN.updateApi(), {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Access-Key': JSONBIN.accessKey
+                },
+                body: JSON.stringify(data)
+            });
+        }
+        
+        function submitIdea() {
+            var idea = document.getElementById('ideaText').value;
+            if (idea && idea.trim()) {
+                // 先加载数据
+                loadJsonBinData().then(function(data) {
+                    data.ideas = data.ideas || [];
+                    data.ideas.push({idea: idea.trim(), time: Date.now()});
+                    
+                    // 保存并提交
+                    saveJsonBinData(data).then(function() {
+                        alert('感谢建议! 🎉');
+                        extraArea.innerHTML = '';
+                    }).catch(function() {
+                        alert('提交失败，请重试');
+                    });
+                });
+            }
+        }
+        
+        function showRank() {
+            extraArea.innerHTML = '<div class="popup-overlay" onclick="extraArea.innerHTML=\'\'"><div class="popup" style="max-height:70vh;overflow-y:auto;"><h3>🏆 排行榜</h3><div id="rankList">加载中...</div></div></div>';
+            
+            // 从 JSONBin 加载
+            loadJsonBinData().then(function(data) {
+                var list = document.getElementById('rankList');
+                var rankData = data.rank || [];
+                if (!rankData || rankData.length === 0) {
+                    list.innerHTML = '<p style="text-align:center;">暂无记录</p>';
+                } else {
+                    var html = '<div class="rank-box">';
+                    for (var i = 0; i < Math.min(rankData.length, 10); i++) {
+                        var cls = '';
+                        if (i === 0) cls = 'first';
+                        else if (i === 1) cls = 'second';
+                        else if (i === 2) cls = 'third';
+                        html += '<div class="rank-item ' + cls + '"><span>' + (i+1) + '. ' + rankData[i].name + '</span><span>' + rankData[i].ms + ' ms</span></div>';
+                    }
+                    html += '</div>';
+                    list.innerHTML = html;
+                }
+            }).catch(function() {
+                document.getElementById('rankList').innerHTML = '<p style="text-align:center;">加载失败</p>';
+            });
+        }
+        
+        // ===== 游戏逻辑 =====
+        function startGame() {
+            if (!playerName) {
+                showNamePopupStartGame();
+                return;
+            }
+            
+            state = 'waiting';
+            document.getElementById('game').className = 'waiting';
+            document.getElementById('game').innerHTML = '<h1>⏳ 等待...</h1><p>看到绿色立刻点!</p>';
+            playSound('wait');
+            
+            var delay = 1500 + Math.random() * 2500;
+            timer = setTimeout(go, delay);
+        }
+        
+        function showNamePopupStartGame() {
+            var html = '<div class="popup">' +
+                '<h3>请输入你的名字</h3>' +
+                '<input id="playerNameInput" placeholder="名字" />' +
+                '<div class="popup-buttons">' +
+                '<button class="secondary" onclick="cancelName()">匿名</button>' +
+                '<button onclick="confirmName()">确定</button>' +
+                '</div></div>';
+            showPopup(html);
+        }
+        
+        function confirmName() {
+            var input = document.getElementById('playerNameInput');
+            if (input && input.value.trim()) {
+                playerName = input.value.trim();
+                localStorage.setItem('playerName', playerName);
+            } else {
+                playerName = '匿名';
+            }
+            extraArea.innerHTML = '';
+            updateNameDisplay();
+            startGame();
+        }
+        
+        function cancelName() {
+            playerName = '匿名';
+            extraArea.innerHTML = '';
+            startGame();
+        }
+        
+        function go() {
+            state = 'go';
+            document.getElementById('game').className = 'go';
+            startTime = Date.now();
+            document.getElementById('game').innerHTML = '<h1>🔥 点!</h1><div class="time" id="t">0</div>';
+            playSound('go');
+            showTime();
+        }
+        
+        function showTime() {
+            if (state === 'go') {
+                var t = document.getElementById('t');
+                if (t) t.textContent = (Date.now() - startTime);
+                requestAnimationFrame(showTime);
+            }
+        }
+        
+        function gameOver() {
+            var ms = Date.now() - startTime;
+            state = 'result';
+            
+            // 更新本地统计
+            stats.games++;
+            stats.totalTime += ms;
+            var isNewBest = false;
+            if (!stats.best || ms < stats.best) {
+                stats.best = ms;
+                isNewBest = true;
+            }
+            saveStats();
+            
+            var rating = getRating(ms);
+            var bestText = isNewBest ? '<p style="color:#ffd700;font-size:1.2rem;">🎉 新纪录!</p>' : '';
+            
+            document.getElementById('game').className = 'result';
+            document.getElementById('game').innerHTML = '<h1 class="' + rating.class + '">' + ms + ' ms</h1>' +
+                '<div class="' + rating.class + '">' + rating.text + '</div>' + bestText +
+                '<p>再来?</p><button id="btnRetry" ontouchstart="retryClick(event)">再玩</button><br>' +
+                '<button class="secondary" ontouchstart="backToMenu(event)">返回菜单</button>';
+            
+            // 播放音效
+            if (isNewBest) {
+                playSound('newbest');
+            } else {
+                playSound('success');
+            }
+            
+            // 提交成绩到 JSONBin
+            loadJsonBinData().then(function(data) {
+                data.rank = data.rank || [];
+                data.rank.push({name: playerName, ms: ms, time: Date.now()});
+                // 排序并只保留前10名
+                data.rank.sort(function(a, b) { return a.ms - b.ms; });
+                data.rank = data.rank.slice(0, 10);
+                saveJsonBinData(data);
+            });
+        }
+        
+        function retryClick(e) {
+            e.preventDefault();
+            startGame();
+        }
+        
+        function backToMenu(e) {
+            e.preventDefault();
+            state = 'idle';
+            document.getElementById('game').className = '';
+            document.getElementById('game').innerHTML = '<h1>⚡ 反应力大挑战</h1><p>变绿就点!</p><div class="name-display" id="nameDisplay"></div>' +
+                '<button id="btnStart" ontouchstart="btnStartClick(event)">开始游戏</button><br>' +
+                '<button id="btnRank" class="secondary" ontouchstart="btnRankClick(event)">🏆 排行榜</button>' +
+                '<button id="btnIdea" class="secondary" ontouchstart="btnIdeaClick(event)">💡 提建议</button>' +
+                '<div class="stats" id="statsDisplay"></div><div id="extraArea"></div>';
+            
+            extraArea = document.getElementById('extraArea');
+            nameDisplay = document.getElementById('nameDisplay');
+            statsDisplay = document.getElementById('statsDisplay');
+            
+            document.getElementById('btnStart').onclick = btnStartClick;
+            document.getElementById('btnRank').onclick = btnRankClick;
+            document.getElementById('btnIdea').onclick = btnIdeaClick;
+            
+            updateNameDisplay();
+            updateStatsDisplay();
+        }
+        
+        // ===== 游戏区域点击 =====
+        document.getElementById('game').addEventListener('click', function(e) {
+            if (state === 'waiting') {
+                clearTimeout(timer);
+                playSound('early');
+                document.getElementById('game').className = 'result too-early';
+                document.getElementById('game').innerHTML = '<h1 class="shake">😱 太早了!</h1><button id="btnRetry" ontouchstart="retryClick(event)">再试</button>';
+            } else if (state === 'go') {
+                gameOver();
+            }
+        });
+    </script>
+</body>
+</html>
