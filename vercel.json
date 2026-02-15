@@ -1,6 +1,15 @@
 {
-  "buildCommand": null,
-  "outputDirectory": ".",
-  "installCommand": null,
-  "framework": null
+  "build": {
+    "command": null,
+    "outputDirectory": "."
+  },
+  "routes": [
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/$1"
+    }
+  ]
 }
